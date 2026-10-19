@@ -1,0 +1,132 @@
+# Builds the Windows installer on a GitHub-hosted runner. A pushed tag vX.Y.Z publishes a GitHub release.
+# Code signing (SignPath Foundation) switches on once the repository variable SIGNPATH_ORGANIZATION_ID and the
+# secret SIGNPATH_API_TOKEN exist: the app exe is signed first, the installer is built from the signed exe,
+# then the installer is signed. Each signing request waits for manual approval in SignPath.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:          # test build: same steps, result kept as a workflow artifact, no release
+
+permissions:
+  contents: write             # create the release
+  actions: read               # SignPath reads the uploaded artifacts
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      OUT: ${{ github.workspace }}\out
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Version
+        id: version
+        shell: powershell
+        run: |
+          $m = Select-String -Path hunters_hq.py -Pattern '^VERSION = "(.+)"' | Select-Object -First 1
+          $v = $m.Matches[0].Groups[1].Value
+          if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$v") {
+            throw "tag ${{ github.ref_name }} does not match VERSION $v in hunters_hq.py"
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Inno Setup
+        shell: powershell
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      - name: Build app
+        shell: powershell
+        run: .\build.ps1 -Version ${{ steps.version.outputs.version }} -Stage app -OutDir $env:OUT
+
+      - name: Upload app for signing
+        if: env.SIGN == 'true'
+        id: app-unsigned
+        uses: actions/upload-artifact@v5
+        with:
+          name: app-unsigned
+          path: out/build/dist/HuntersHQ/HuntersHQ.exe
+          if-no-files-found: error
+
+      - name: Sign app
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: hunters-hq-desktop
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.app-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-app
+
+      - name: Use signed app
+        if: env.SIGN == 'true'
+        shell: powershell
+        run: Copy-Item signed-app\HuntersHQ.exe out\build\dist\HuntersHQ\HuntersHQ.exe -Force
+
+      - name: Build installer
+        shell: powershell
+        run: .\build.ps1 -Version ${{ steps.version.outputs.version }} -Stage installer -OutDir $env:OUT
+
+      - name: Upload installer for signing
+        if: env.SIGN == 'true'
+        id: setup-unsigned
+        uses: actions/upload-artifact@v5
+        with:
+          name: installer-unsigned
+          path: out/HuntersHQ-Setup.exe
+          if-no-files-found: error
+
+      - name: Sign installer
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: hunters-hq-desktop
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.setup-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-setup
+
+      - name: Final installer and checksum
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          $src = if ($env:SIGN -eq 'true') { 'signed-setup\HuntersHQ-Setup.exe' } else { 'out\HuntersHQ-Setup.exe' }
+          Copy-Item $src release\HuntersHQ-Setup.exe
+          $hash = (Get-FileHash release\HuntersHQ-Setup.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  HuntersHQ-Setup.exe" | Set-Content -Encoding ascii release\HuntersHQ-Setup.exe.sha256
+          "sha256 $hash, signature: $((Get-AuthenticodeSignature release\HuntersHQ-Setup.exe).Status)"
+
+      - name: Keep build
+        uses: actions/upload-artifact@v5
+        with:
+          name: HuntersHQ-Setup-${{ steps.version.outputs.version }}
+          path: release/
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          Hunters HQ $('${{ steps.version.outputs.version }}') for Windows 10/11 (64-bit): the 101st Hunter Squadron's
+          Hunters HQ (https://hq.101huntersqn.com) as a desktop program with chat, voice rooms, camera and screen sharing.
+          Install: run HuntersHQ-Setup.exe (no admin rights needed). SHA-256: see HuntersHQ-Setup.exe.sha256.
+
+          Code signing policy: https://github.com/${{ github.repository }}#code-signing-policy
+          "@
+          gh release create '${{ github.ref_name }}' release\HuntersHQ-Setup.exe release\HuntersHQ-Setup.exe.sha256 `
+            --title "Hunters HQ ${{ steps.version.outputs.version }}" --notes $notes

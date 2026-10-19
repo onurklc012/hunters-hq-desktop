@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "app": the PyInstaller launcher, uploaded by the release workflow
+     as a GitHub artifact (zip) that holds only HuntersHQ.exe. Kept here for review; SignPath uses its own copy. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="HuntersHQ.exe" product-name="Hunters HQ" max-matches="1">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

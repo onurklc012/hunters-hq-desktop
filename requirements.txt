@@ -1,0 +1,3 @@
+# Build environment for the members' Windows app (build.ps1 creates data\member-app\build\venv from this).
+pywebview==5.4
+pyinstaller==6.22.3

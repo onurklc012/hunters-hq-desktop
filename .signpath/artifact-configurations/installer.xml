@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "installer": the Inno Setup installer (built from the signed app),
+     uploaded as a GitHub artifact (zip) that holds only HuntersHQ-Setup.exe. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="HuntersHQ-Setup.exe" product-name="Hunters HQ" max-matches="1">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

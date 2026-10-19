@@ -1,0 +1,4 @@
+# build output (build.ps1 writes here when not on the HQ server)
+out/
+__pycache__/
+*.pyc
