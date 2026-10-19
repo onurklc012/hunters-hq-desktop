@@ -127,6 +127,7 @@ jobs:
           Install: run HuntersHQ-Setup.exe (no admin rights needed). SHA-256: see HuntersHQ-Setup.exe.sha256.
 
           Code signing policy: https://github.com/${{ github.repository }}#code-signing-policy
+          Free code signing provided by SignPath.io (https://about.signpath.io), certificate by SignPath Foundation (https://signpath.org).
           "@
           gh release create '${{ github.ref_name }}' release\HuntersHQ-Setup.exe release\HuntersHQ-Setup.exe.sha256 `
             --title "Hunters HQ ${{ steps.version.outputs.version }}" --notes $notes
